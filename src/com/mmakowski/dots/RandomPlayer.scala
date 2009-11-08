@@ -3,7 +3,7 @@ package com.mmakowski.dots
 import scala.util.Random
 
 class RandomPlayer(id: Int) extends Player(id) {
-	val resignationProbability = 0.01
+	val resignationProbability = 0.001
 	val moveDistance = 2
 	val rand = new Random()
  
