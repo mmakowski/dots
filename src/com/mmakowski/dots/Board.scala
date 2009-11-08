@@ -85,14 +85,14 @@ class Board(val sizeX: Int, val sizeY: Int) {
     	for (dir <- dirsToLink) { 
     		potentialPaths(x)(y).links(dir.index) = potentialPaths(x + dir.dx)(y + dir.dy)
 			potentialPaths(x + dir.dx)(y + dir.dy).links(dir.oppositeIndex) = potentialPaths(x)(y)
-    		println("added link in direction " + dir.index)
+    		// println("added link in direction " + dir.index)
     	}
     	// TODO: the below materialises all links in the structures! Instead, it should
     	// 1. find the non-empty cycles
     	// 2. materialise the links that form these cycles
     	for (l <- cyclesClosed(x, y, dirsToLink)) materialiseLinks(x, y, findCycle(x, y, l))
     	potentialPaths(x)(y).updateStructureId(minStructId)
-    	println("set structure id to " + minStructId)
+    	//println("set structure id to " + minStructId)
     }
 
     // TODO: temporary
@@ -167,10 +167,24 @@ class Board(val sizeX: Int, val sizeY: Int) {
     		map
     	}
     	val idToLinksMap = pairs.foldLeft(new HashMap[Int, List[Direction]]())((map, pair) => addToMap(map, pair._1, pair._2))
-    	// FIXME: hasGap doesn't work; N E has gap of 2 but can link directly
-    	def hasGap(dirs: List[Direction]) = 
-    		dirs.foldLeft((List[Int](), dirs(0)))((listAndPrev, dir) => (listAndPrev._1 ::: List(dir.index - listAndPrev._2.index), dir))._1.exists(diff => diff > 1 && diff < 7)
-    	idToLinksMap.values.filter(hasGap(_)).toList
+    	// check if there are dots in the same structure that are not neighbouring. Assumes there are at least 2 directions in the list  
+    	def hasGap(dirs: List[Direction]): Boolean = {
+    		//println("dirs to check for gaps: " + dirs)
+    		for (i <- 0 until dirs.length) {
+    			val curr = dirs(i)
+    			val prev = dirs((dirs.length + i - 1) % dirs.length)
+    			val next = dirs((i + 1) % dirs.length)
+    			val requiredGap = if (curr.index % 2 == 0) 3 else 2
+    			val gapBefore = if (prev.index < curr.index) curr.index - prev.index else curr.index + 8 - prev.index 
+    			val gapAfter = if (next.index > curr.index) next.index - curr.index else next.index + 8 - curr.index
+    			if (gapBefore >= requiredGap && gapAfter >= requiredGap) {
+    				//println("found a good gap: " + curr + " " + (gapBefore, gapAfter))
+    				return true
+    			}
+    		}
+    		false
+    	}
+    	idToLinksMap.values.filter(dl => dl.length > 1 && hasGap(dl)).toList
     }
       
     def canLink(x: Int, y: Int, dx: Int, dy: Int) =
