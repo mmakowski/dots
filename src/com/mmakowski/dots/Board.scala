@@ -95,10 +95,11 @@ class Board(val sizeX: Int, val sizeY: Int) {
     	}
     	for (l <- cyclesClosed(x, y, dirsToLink)) {
     		val cycle = findCycle(x, y, l)
-    		val interior = findCycleInterior(x, y, cycle)
-    		if (interior != null) {
-    			markInterior(interior, getDotAt(x, y))
-    			materialiseLinks(x, y, cycle)
+    		val interiorIfValid = findCycleInterior(x, y, cycle)
+    		interiorIfValid match {
+    			case Some(interior) =>
+    				markInterior(interior, getDotAt(x, y))
+    				materialiseLinks(x, y, cycle)
     		}
     	}
     	potentialPaths(x)(y).updateStructureId(minStructId)
@@ -106,43 +107,44 @@ class Board(val sizeX: Int, val sizeY: Int) {
     }
 
     // TODO
-    private def findCycleInterior(x: Int, y: Int, cycle: List[Direction]) = List[(Int, Int)]()
+    private def findCycleInterior(x: Int, y: Int, cycle: List[Direction]) = Some(List[(Int, Int)]())
     
     // TODO
     private def markInterior(interior: List[(Int, Int)], owner: Int) = ()
     
     /**
-     * find a cycle closed by the dot at (x, y) within the structure to which links in dirs belong
+     * find the maximal (i.e. surrounding the largest area) cycle closed by the dot at (x, y) within the structure to which links in dirs belong
      */
     private def findCycle(x: Int, y: Int, dirs: List[Direction]) = {
     	println("looking for cycle from " + (x, y) + " in directions " + dirs)
-    	def findCycle(startX: Int, startY: Int, x: Int, y: Int, pathDirs: Stack[Direction], pathPoints: Stack[(Int, Int)], noThroughRoad: HashSet[(Int, Int)], rotation: Int): List[Direction] = {
+    	def findCycle(startX: Int, startY: Int, x: Int, y: Int, pathDirs: Stack[Direction], pathPoints: Stack[(Int, Int)], noThroughRoad: HashSet[(Int, Int)], rotation: Int): Option[List[Direction]] = {
     		// checking that rotation is positive (i.e. we've made a turn to the right) ensures that the cycle is maximal, because we always try leftmost
     	    // branches first
-    		if (x == startX && y == startY) return if (rotation > 0) pathDirs.toList else null
+    		if (x == startX && y == startY) return if (rotation > 0) Some(pathDirs.toList) else None
+   			pathPoints.push((x, y))
+    		// try all links from this dot (except for the one through which we just arrived) starting from the leftmost and proceeding to the right
     		val dirsToTry = for (j <- 1 until 8; i = (pathDirs.top.oppositeIndex + j) % 8; dir = DIRECTIONS(i) 
                                  if potentialPaths(x)(y).links(i) != null && !pathPoints.contains((x + dir.dx, y + dir.dy)) && !noThroughRoad.contains((x + dir.dx, y + dir.dy))) 
                             	yield dir
-   			pathPoints.push((x, y))
     		for (dir <- dirsToTry) {
     			val currRotation = (dir.index - pathDirs.top.index + 8) % 8 
     			pathDirs.push(dir)
     			val cycle = findCycle(startX, startY, x + dir.dx, y + dir.dy, pathDirs, pathPoints, noThroughRoad, rotation + currRotation)
-    			if (cycle != null) return cycle
+    			if (cycle != None) return cycle
     			pathDirs.pop
     		}
     		pathPoints.pop
     		// mark this point as one that doesn't lead to the right place so that it is not attempted any more
     		noThroughRoad += ((x, y))
     		println("backing out from " + pathDirs)
-    		null
+    		None
     	}
     	val initialDirs = new Stack[Direction]()
     	initialDirs.push(dirs(0))
     	val initialPoints = new Stack[(Int, Int)]()
     	val cycle = findCycle(x, y, x + dirs(0).dx, y + dirs(0).dy, initialDirs, initialPoints, new HashSet[(Int, Int)], 0)
     	println("cycle to materialise: " + cycle)
-    	cycle
+    	cycle.get
     }
     
     /**
@@ -187,8 +189,10 @@ class Board(val sizeX: Int, val sizeY: Int) {
     private def cyclesClosed(x: Int, y: Int, dirsToLink: Array[Direction]) = {
     	val pairs = for (dir <- dirsToLink) yield (potentialPaths(x + dir.dx)(y + dir.dy).structureId, dir)
     	def addToMap(map: HashMap[Int, List[Direction]], id: Int, dir: Direction) = {
-    		if (map.contains(id)) map(id) = map(id) ::: List(dir)
-    		else map(id) = List(dir)
+    		map(id) = map.get(id) match {
+    			case Some(list) => list ::: List(dir)
+    			case None => List(dir)
+    		}
     		map
     	}
     	val idToLinksMap = pairs.foldLeft(new HashMap[Int, List[Direction]]())((map, pair) => addToMap(map, pair._1, pair._2))
