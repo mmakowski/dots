@@ -42,9 +42,9 @@ class Board(val sizeX: Int, val sizeY: Int) {
 	val DOWN = 2.asInstanceOf[Byte]
     
     // the state of the board
-	val board = new Array[Array[Byte]](sizeX, sizeY)
+	val board: Array[Array[Byte]] = Array.ofDim(sizeX, sizeY)//new Array[Array[Byte]](sizeX, sizeY)
 	// a helper array that contains potential links between dots
-	private val potentialPaths = new Array[Array[PotentialPathElement]](sizeX, sizeY)
+	private val potentialPaths: Array[Array[PotentialPathElement]] = Array.ofDim(sizeX, sizeY)
 	var isEmpty = true
     private var nextStructureId = 0
  
@@ -120,7 +120,7 @@ class Board(val sizeX: Int, val sizeY: Int) {
     	def findCycle(startX: Int, startY: Int, x: Int, y: Int, pathDirs: Stack[Direction], pathPoints: Stack[(Int, Int)], noThroughRoad: HashSet[(Int, Int)], rotation: Int): Option[List[Direction]] = {
     		// checking that rotation is positive (i.e. we've made a turn to the right) ensures that the cycle is maximal, because we always try leftmost
     	    // branches first
-    		if (x == startX && y == startY) return if (rotation > 0) Some(pathDirs.toList) else None
+    		if (x == startX && y == startY) return if (rotation > 0) Some(pathDirs.toList.reverse) else None
    			pathPoints.push((x, y))
     		// try all links from this dot (except for the one through which we just arrived) starting from the leftmost and proceeding to the right
     		val dirsToTry = for (j <- 1 until 8; i = (pathDirs.top.oppositeIndex + j) % 8; dir = DIRECTIONS(i) 
