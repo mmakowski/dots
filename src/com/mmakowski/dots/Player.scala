@@ -43,6 +43,7 @@ abstract class Player(val id: Int) extends Actor {
  
 	protected def noMoreMoves(board: Board) = {
 		println("there are no more valid moves:\n" + board)
+		println("final score: " + board.score)
 		var currNext = nextPlayer
 		while (currNext != self) {
 			val next = currNext.nextPlayer

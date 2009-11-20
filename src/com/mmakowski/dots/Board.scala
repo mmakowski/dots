@@ -2,18 +2,19 @@ package com.mmakowski.dots
 
 import scala.collection.mutable.{Map, HashMap, HashSet, Stack}
 
-sealed case class Direction(val index: Int, val dx: Int, val dy: Int) {
+sealed case class Direction(symbol: String, index: Int, dx: Int, dy: Int) {
 	val oppositeIndex = (index + 4) % 8 
+	override def toString() = symbol 
 }
 
-case object N extends Direction(0, 0, -1)
-case object NE extends Direction(1, 1, -1)
-case object E extends Direction(2, 1, 0)
-case object SE extends Direction(3, 1, 1)
-case object S extends Direction(4, 0, 1)
-case object SW extends Direction(5, -1, 1)
-case object W extends Direction(6, -1, 0)
-case object NW extends Direction(7, -1, -1)
+object N extends Direction("N", 0, 0, -1)
+object NE extends Direction("NE", 1, 1, -1)
+object E extends Direction("E", 2, 1, 0)
+object SE extends Direction("SE", 3, 1, 1)
+object S extends Direction("S", 4, 0, 1)
+object SW extends Direction("SW", 5, -1, 1)
+object W extends Direction("W", 6, -1, 0)
+object NW extends Direction("NW", 7, -1, -1)
 
 // TODO: introduce lightweight board that only holds the byte array
 
@@ -37,12 +38,15 @@ class Board(val sizeX: Int, val sizeY: Int) {
 	val LINK_OFFSET = 0
 	val NONE = 0
 	val DIRECTIONS = Array(N, NE, E, SE, S, SW, W, NW)
+	val CROSS_DIRECTIONS = Set(NE, SE, SW, NW)
     // link directions
 	val UP = 1.asInstanceOf[Byte]
 	val DOWN = 2.asInstanceOf[Byte]
     
     // the state of the board
-	val board: Array[Array[Byte]] = Array.ofDim(sizeX, sizeY)//new Array[Array[Byte]](sizeX, sizeY)
+	val board: Array[Array[Byte]] = Array.ofDim(sizeX, sizeY)
+	// current score: player -> opponent -> number of dots captured
+	val score: Map[Int, Map[Int, Int]] = new HashMap[Int, Map[Int, Int]]
 	// a helper array that contains potential links between dots
 	private val potentialPaths: Array[Array[PotentialPathElement]] = Array.ofDim(sizeX, sizeY)
 	var isEmpty = true
@@ -51,8 +55,12 @@ class Board(val sizeX: Int, val sizeY: Int) {
 	/**
 	 * return all crossings where a player can legally move and which are within given distance of some other dots. 
 	 */
-	def getCrossingsToConsider(distance: Int) = 
-    	for (x <- List.range(0, sizeX); y <- List.range(0, sizeY) if isMoveLegal(x, y)._1 && dotsWithin(x, y, distance)) yield (x, y)
+	def getCrossingsToConsider(distance: Int) = for {
+		x <- List.range(0, sizeX)
+		y <- List.range(0, sizeY) 
+		if isMoveLegal(x, y)._1 
+		if dotsWithin(x, y, distance) 
+	} yield (x, y)
  
 	def move(x: Int, y: Int, playerId: Int) = {
 	    val (legal, message) = isMoveLegal(x, y)
@@ -75,13 +83,12 @@ class Board(val sizeX: Int, val sizeY: Int) {
  	}
   
     private def dotsWithin(x: Int, y: Int, distance: Int): Boolean = {
-    	for (dy <- -distance until distance + 1) {
-    		for (dx <- -distance until distance + 1)
-    			if (!(x + dx < 0 || x + dx >= sizeX || y + dy < 0 || y + dy >= sizeY) && getDotAt(x + dx, y + dy) != NONE) return true
-    	}
+    	// TODO: rewrite in a more idiomatic way
+    	for (dy <- -distance until distance + 1; dx <- -distance until distance + 1)
+   			if (!(x + dx < 0 || x + dx >= sizeX || y + dy < 0 || y + dy >= sizeY) && getDotAt(x + dx, y + dy) != NONE) return true
     	false
     }
-    
+ 	
     private def addToPotentialPaths(x: Int, y: Int) = {
     	val dirsToLink = for (dir <- DIRECTIONS if canLink(x, y, dir.dx, dir.dy)) yield dir
     	val minStructId = dirsToLink.map(d => potentialPaths(x + d.dx)(y + d.dy).structureId).foldLeft(nextStructureId)(Math.min) 
@@ -95,39 +102,111 @@ class Board(val sizeX: Int, val sizeY: Int) {
     	}
     	for (l <- cyclesClosed(x, y, dirsToLink)) {
     		val cycle = findCycle(x, y, l)
-    		val interiorIfValid = findCycleInterior(x, y, cycle)
-    		interiorIfValid match {
-    			case Some(interior) =>
-    				markInterior(interior, getDotAt(x, y))
-    				materialiseLinks(x, y, cycle)
+    		findAndMarkCycleInterior(x, y, cycle) match {
+    			case Some(_) => materialiseLinks(x, y, cycle)
+    			case None => println("no enemy dots in the cycle!")
     		}
     	}
     	potentialPaths(x)(y).updateStructureId(minStructId)
-    	//println("set structure id to " + minStructId)
+    	println("set structure id to " + minStructId)
     }
 
-    // TODO
-    private def findCycleInterior(x: Int, y: Int, cycle: List[Direction]) = Some(List[(Int, Int)]())
+    /**
+     * find the interior and return it if it contains any enemy dots. If not, return None
+     */
+    private def findAndMarkCycleInterior(x: Int, y: Int, cycle: List[Direction]): Option[Set[(Int, Int)]] = {
+    	var interior = Set[(Int, Int)]()
+    	val currentPlayer = getDotAt(x, y)
+    	val border = cycleToBorder((x, y), cycle)
+    	def addReachablePointsToInterior(origin: (Int, Int)): Unit = {
+    		println("adding all points reachable from " + origin + " to interior")
+    		val (x, y) = origin
+    		interior = interior + origin
+    		for {
+    			dir <- DIRECTIONS
+    			cx = x + dir.dx
+    			cy = y + dir.dy
+    			if !(border contains (cx, cy))
+    			if !(interior contains (cx, cy))
+    			if !(CROSS_DIRECTIONS.contains(dir) && border.contains((x + dir.dx, y)) && border.contains((x, y + dir.dy)))
+    		} addReachablePointsToInterior((cx, cy))
+    		println("interior = " + interior)
+    	}
+    	// FIXME: do this for all points in the cycle
+    	val firstDirIndexToCheck = (cycle.last.oppositeIndex + 8 - 1) % 8
+    	val dirsToCheck = for (i <- firstDirIndexToCheck.until(cycle.head.index, -1)) yield DIRECTIONS(i)
+    	for {
+    		dir <- dirsToCheck
+    		currentPoint = (x + dir.dx, y + dir.dy)
+    		if !(border contains currentPoint)
+    		if !(interior contains currentPoint)
+   			if !(CROSS_DIRECTIONS.contains(dir) && border.contains((x + dir.dx, y)) && border.contains((x, y + dir.dy)))
+    	} addReachablePointsToInterior(currentPoint)
+    	val playersSurrounded = interior.map((point) => getDotAt(point._1, point._2))
+    	println("players surrounded: " + playersSurrounded)
+    	if (!playersSurrounded.exists(!List(NONE, currentPlayer).contains(_))) return None
+    	updateScores(interior, currentPlayer)
+    	println("scores: " + score)
+    	markInterior(interior, currentPlayer)
+    	Some(interior)
+    }
+
+    /**
+     * translate cycle given as the origin and a list of directions to the list of points forming the cycle
+     */
+    private def cycleToBorder(origin: (Int, Int), cycle: List[Direction]) = {
+		var curr = origin
+		var border = List(origin)
+		for (dir <- cycle) {
+			curr = (curr._1 + dir.dx, curr._2 + dir.dy)
+			border = border ++ List(curr)
+		}
+		border
+    }
     
-    // TODO
-    private def markInterior(interior: List[(Int, Int)], owner: Int) = ()
+    private def updateScores(interior: Set[(Int, Int)], newOwner: Int) = interior.foreach((point) => {
+    	println("checking " + point)
+    	val (x, y) = point
+    	val dot = getDotAt(x, y)
+    	if (dot != NONE) {
+    		println("dot: " + dot)
+    		val owner = getOwnerAt(x, y)
+    		println("owner: " + owner)
+    		if (owner != NONE && owner != dot) score(owner)(dot) -= 1
+   			if (dot != newOwner) {
+   				if (!score.keysIterator.contains(newOwner)) score(newOwner) = new HashMap[Int, Int]
+   				score(newOwner)(dot) = score(newOwner).getOrElseUpdate(dot, 0) + 1
+   			}
+    	}
+    })
+    
+    /**
+     * set the owner for all crossings in the given list of points
+     */
+    private def markInterior(interior: Set[(Int, Int)], owner: Int) = interior.foreach((point) => setOwner(point._1, point._2, owner.asInstanceOf[Byte])) 
     
     /**
      * find the maximal (i.e. surrounding the largest area) cycle closed by the dot at (x, y) within the structure to which links in dirs belong
      */
-    private def findCycle(x: Int, y: Int, dirs: List[Direction]) = {
+    private def findCycle(x: Int, y: Int, dirs: List[Direction]): List[Direction] = {
     	println("looking for cycle from " + (x, y) + " in directions " + dirs)
     	def findCycle(startX: Int, startY: Int, x: Int, y: Int, pathDirs: Stack[Direction], pathPoints: Stack[(Int, Int)], noThroughRoad: HashSet[(Int, Int)], rotation: Int): Option[List[Direction]] = {
     		// checking that rotation is positive (i.e. we've made a turn to the right) ensures that the cycle is maximal, because we always try leftmost
     	    // branches first
-    		if (x == startX && y == startY) return if (rotation > 0) Some(pathDirs.toList.reverse) else None
+    		if (x == startX && y == startY) return if (rotation > 0 && pathDirs.length > 3) Some(pathDirs.toList.reverse) else None
    			pathPoints.push((x, y))
     		// try all links from this dot (except for the one through which we just arrived) starting from the leftmost and proceeding to the right
-    		val dirsToTry = for (j <- 1 until 8; i = (pathDirs.top.oppositeIndex + j) % 8; dir = DIRECTIONS(i) 
-                                 if potentialPaths(x)(y).links(i) != null && !pathPoints.contains((x + dir.dx, y + dir.dy)) && !noThroughRoad.contains((x + dir.dx, y + dir.dy))) 
-                            	yield dir
+    		val dirsToTry = for {
+    			j <- 1 until 8
+    			i = (pathDirs.top.oppositeIndex + j) % 8
+    			dir = DIRECTIONS(i) 
+                if potentialPaths(x)(y).links(i) != null 
+                if !pathPoints.contains((x + dir.dx, y + dir.dy)) 
+                if !noThroughRoad.contains((x + dir.dx, y + dir.dy)) 
+    		} yield dir
     		for (dir <- dirsToTry) {
-    			val currRotation = (dir.index - pathDirs.top.index + 8) % 8 
+    			val rawRotation = dir.index - pathDirs.top.index
+    			val currRotation = if (rawRotation > 4) rawRotation - 8 else if (rawRotation < -4) rawRotation + 8 else rawRotation //(dir.index - pathDirs.top.index + 8) % 8 
     			pathDirs.push(dir)
     			val cycle = findCycle(startX, startY, x + dir.dx, y + dir.dy, pathDirs, pathPoints, noThroughRoad, rotation + currRotation)
     			if (cycle != None) return cycle
@@ -139,12 +218,18 @@ class Board(val sizeX: Int, val sizeY: Int) {
     		println("backing out from " + pathDirs)
     		None
     	}
-    	val initialDirs = new Stack[Direction]()
-    	initialDirs.push(dirs(0))
-    	val initialPoints = new Stack[(Int, Int)]()
-    	val cycle = findCycle(x, y, x + dirs(0).dx, y + dirs(0).dy, initialDirs, initialPoints, new HashSet[(Int, Int)], 0)
-    	println("cycle to materialise: " + cycle)
-    	cycle.get
+    	// TODO: nicer control flow
+    	for (dir <- dirs) {
+	    	val initialDirs = new Stack[Direction]()
+	    	initialDirs.push(dir)
+	    	val initialPoints = new Stack[(Int, Int)]()
+	    	val cycle = findCycle(x, y, x + dir.dx, y + dir.dy, initialDirs, initialPoints, new HashSet[(Int, Int)], 0)
+	    	if (cycle != None) {
+	    		println("cycle to materialise: " + cycle)
+	    		return cycle.get
+	    	}
+    	}
+    	throw new Exception("point " + (x, y) + " should have closed a cycle but no cycle found!")
     }
     
     /**
@@ -213,7 +298,7 @@ class Board(val sizeX: Int, val sizeY: Int) {
     		}
     		false
     	}
-    	idToLinksMap.values.filter(dl => dl.length > 1 && hasGap(dl)).toList
+    	idToLinksMap.valuesIterator.filter(dl => dl.length > 1 && hasGap(dl)).toList
     }
       
     private def canLink(x: Int, y: Int, dx: Int, dy: Int) =
@@ -255,6 +340,10 @@ class Board(val sizeX: Int, val sizeY: Int) {
 
   	private def setCrossLink(x: Int, y: Int, dir: Byte) = board(x)(y) = (board(x)(y) | (dir << LINK_OFFSET)).asInstanceOf[Byte]
 
+	private def setOwner(x: Int, y: Int, owner: Byte) = {
+		board(x)(y) = (board(x)(y) & (OWNER_MASK ^ 0xff)).asInstanceOf[Byte]
+		board(x)(y) = (board(x)(y) | (owner << OWNER_OFFSET)).asInstanceOf[Byte]
+	}
    
 	// no links: override def toString() = ("" /: board)((s, row) => s + ("" /: row)((s, cell) => s + playerSymbol(cell)) + "\n")
 	override def toString() = {
@@ -265,12 +354,14 @@ class Board(val sizeX: Int, val sizeY: Int) {
   			for (x <- 0 until sizeX) {
   				val currDot = getDotAt(x, y)
   				if (x > 0) builder.append(if (currDot != NONE && prevDot == currDot) "-" else " ")
-  				builder.append(playerSymbol(currDot))
+  				builder.append(playerFieldSymbol(getOwnerAt(x, y)))
+  				builder.append(playerDotSymbol(currDot))
   				prevDot = currDot
   			}
   			builder.append("\n")
   			// vertical/cross links
   			if (y < sizeY - 1) {
+  				builder.append(" ")
 	  			for (x <- 0 until sizeX) {
 	  				// vertical link
 	  				val dotAbove = getDotAt(x, y)
@@ -285,15 +376,20 @@ class Board(val sizeX: Int, val sizeY: Int) {
   		builder.toString
 	}
    
-	private def playerSymbol(playerId: Int) = playerId match {
+	private def playerFieldSymbol(playerId: Int) = playerId match {
+		case 0 => " "
+		case _ => playerId.toString()
+	}
+	
+	private def playerDotSymbol(playerId: Int) = playerId match {
 	  case 0 => "."
 	  case _ => playerId.toString()
 	} 
  
   	private def crossLinkSymbol(linkType: Int) = linkType match {
-  	  	case 0 => " "
-  	  	case 1 => "/"
-     	case 2 => "\\"
+  	  	case 0 => "  "
+  	  	case 1 => "/ "
+     	case 2 => "\\ "
   	}
     
 }
