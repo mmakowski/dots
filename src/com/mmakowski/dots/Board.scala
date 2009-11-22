@@ -206,7 +206,7 @@ class Board(val sizeX: Int, val sizeY: Int) {
     		} yield dir
     		for (dir <- dirsToTry) {
     			val rawRotation = dir.index - pathDirs.top.index
-    			val currRotation = if (rawRotation > 4) rawRotation - 8 else if (rawRotation < -4) rawRotation + 8 else rawRotation //(dir.index - pathDirs.top.index + 8) % 8 
+    			val currRotation = if (rawRotation > 4) rawRotation - 8 else if (rawRotation < -4) rawRotation + 8 else rawRotation 
     			pathDirs.push(dir)
     			val cycle = findCycle(startX, startY, x + dir.dx, y + dir.dy, pathDirs, pathPoints, noThroughRoad, rotation + currRotation)
     			if (cycle != None) return cycle
@@ -229,7 +229,9 @@ class Board(val sizeX: Int, val sizeY: Int) {
 	    		return cycle.get
 	    	}
     	}
-    	throw new Exception("point " + (x, y) + " should have closed a cycle but no cycle found!")
+    	val msg = "point " + (x, y) + " should have closed a cycle but no cycle found!"
+    	println(msg)
+    	throw new Exception(msg)
     }
     
     /**
