@@ -1,6 +1,7 @@
 package com.mmakowski.dots
 
 import scala.collection.mutable.{Map, HashMap, HashSet, Stack}
+import scala.math._
 
 sealed case class Direction(symbol: String, index: Int, dx: Int, dy: Int) {
 	val oppositeIndex = (index + 4) % 8 
@@ -20,7 +21,9 @@ object NW extends Direction("NW", 7, -1, -1)
 
 /**
  * Objects of this class represent the current situation on the game board and encapsulate the logic to interpret this situation, i.e.
- * determine when 
+ * determine when enemy dots have been captured.
+ * 
+ * TODO: move the capture logic to players
  */
 class Board(val sizeX: Int, val sizeY: Int) {
 	/**
@@ -91,7 +94,7 @@ class Board(val sizeX: Int, val sizeY: Int) {
  	
     private def addToPotentialPaths(x: Int, y: Int) = {
     	val dirsToLink = for (dir <- DIRECTIONS if canLink(x, y, dir.dx, dir.dy)) yield dir
-    	val minStructId = dirsToLink.map(d => potentialPaths(x + d.dx)(y + d.dy).structureId).foldLeft(nextStructureId)(Math.min) 
+    	val minStructId = dirsToLink.map(d => potentialPaths(x + d.dx)(y + d.dy).structureId).foldLeft(nextStructureId)(min) 
     	if (minStructId == nextStructureId) nextStructureId = nextStructureId + 1
     	potentialPaths(x)(y) = new PotentialPathElement(x, y)
     	println((x, y))
